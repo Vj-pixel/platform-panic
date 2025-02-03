@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Endless Platformer Game</title>
+  <link rel="stylesheet" href="project.css" />
+</head>
+<body>
+  <button id="pauseButton">Pause</button>
+  <canvas id="gameCanvas" width="1600" height="400"></canvas>
+  <script>
+    // Load sound effects and music
+    const backgroundMusic = new Audio('bgaudio.mp3');
+    backgroundMusic.loop = true;
+    backgroundMusic.volume = 0.5;
+
+    const gameOverMusic = new Audio('gameover.mp3');
+    gameOverMusic.volume = 0.7; // Adjust volume as needed
+
+    const jumpSound = new Audio('jumpsound.mp3');
+    const moveSound = new Audio('dashsound.mp3');
+
+    // Set up canvas and context
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 2700;
+    canvas.height = 1200;
+
+    const gravity = 0.5;
+    const player = {
+      x: 50,
+      y: 300,
+      width: 30,
+      height: 30,
+      color: 'lime',
+      dx: 0,
+      dy: 0,
+      speed: 4,
+      jumpForce: -12,
+      onGround: false,
+      jumpCount: 0,
+      maxJumps: 2,
+      hasTripleJump: false,
+      shieldActive: false,
+      scoreMultiplier: 1
+    };
+
+    const keys = {};
+    let platforms = generatePlatforms();
+    let powerUps = [];
+    let scrollSpeed = 1.5;
+    let score = 0;
+    let highScore = 0;
+    let isPaused = false;
+    let isGameOver = false; // Flag to check if game is over
+
+    // Pause button functionality
+    document.getElementById('pauseButton').addEventListener('click', function() {
+      if (isGameOver) return; // Do not allow pausing on game over
+      isPaused = !isPaused;
+      if (isPaused) {
+        document.getElementById('pauseButton').textContent = 'Resume';
+        backgroundMusic.volume = 0.19;
+        console.log('Game Paused');
+      } else {
+        backgroundMusic.volume = 0.5;
+        document.getElementById('pauseButton').textContent = 'Pause';
+        console.log('Game Resumed');
+        update(); // Resume the game loop
+      }
+    });
+
+    // Play the background music when the game starts
+    backgroundMusic.play();
+
+    document.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+
+      // Jumping with Space or ArrowUp
+      if ((e.code === 'Space' || e.code === 'ArrowUp') && player.jumpCount < player.maxJumps && !isGameOver) {
+        player.dy = player.jumpForce;
+        player.jumpCount++;
+        jumpSound.play();
+      }
+
+      // Movement sound effect
+      if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && player.dx === 0 && !isGameOver) {
+        moveSound.play();
+      }
+
+      // Restart the game when "R" is pressed on the death screen
+      if (isGameOver && e.code === 'KeyR') {
+        restartGame();
+      }
+    });
+
+    document.addEventListener('keyup', (e) => {
+      keys[e.code] = false;
+    });
+
+    // Generate initial platforms with increased gap values for challenge
+    function generatePlatforms() {
+      const platforms = [];
+      let x = 0;
+      const minGap = 300;
+      const maxGap = 400;
+      for (let i = 0; i < 10; i++) {
+        const width = 120;
+        const height = 20;
+        const y = 300 - Math.floor(Math.random() * 150);
+        platforms.push({ x, y, width, height });
+        x += width + Math.floor(Math.random() * (maxGap - minGap) + minGap);
+      }
+      // Ground platform
+      platforms.push({ x: 0, y: 370, width: 800, height: 30 });
+      return platforms;
+    }
+
+    // Spawn a power-up at a random position (off-screen to the right)
+    function spawnPowerUp() {
+      const powerUpTypes = ['speed', 'tripleJump', 'shield', 'scoreMultiplier'];
+      const type = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+      const x = canvas.width + Math.random() * 300;
+      const y = Math.random() * (canvas.height - 50) + 20;
+      return { x, y, type, collected: false };
+    }
+
+    // Handle power-up collection
+    function collectPowerUp(powerUp) {
+      switch (powerUp.type) {
+        case 'speed':
+          player.speed += 2;
+          console.log("Speed power-up collected! New speed:", player.speed);
+          break;
+        case 'tripleJump':
+          player.hasTripleJump = true;
+          player.maxJumps = 3;
+          console.log("Triple jump power-up collected! You can now triple jump.");
+          break;
+        case 'shield':
+          player.shieldActive = true;
+          console.log("Shield power-up collected! Shield is active.");
+          break;
+        case 'scoreMultiplier':
+          player.scoreMultiplier *= 2;
+          console.log("Score multiplier power-up collected! Multiplier is now:", player.scoreMultiplier);
+          break;
+        default:
+          console.log("Unknown power-up collected!");
+          break;
+      }
+    }
+
+    // Check collisions with power-ups
+    function checkPowerUpCollision() {
+      powerUps.forEach((powerUp) => {
+        if (!powerUp.collected &&
+            Math.abs(player.x - powerUp.x) < 20 &&
+            Math.abs(player.y - powerUp.y) < 20) {
+          collectPowerUp(powerUp);
+          powerUp.collected = true;
+        }
+      });
+    }
+
+    // Main update loop
+    function update() {
+      if (isPaused || isGameOver) return; // Stop updating if paused or game over
+
+      // Update player movement based on keys
+      player.dx = 0;
+      if (keys['ArrowLeft']) player.dx = -player.speed;
+      if (keys['ArrowRight']) player.dx = player.speed;
+
+      player.dy += gravity;
+      player.x += player.dx;
+      player.y += player.dy;
+
+      // Update platforms: scroll left
+      platforms.forEach(platform => {
+        platform.x -= scrollSpeed;
+        // Collision detection with platforms
+        if (player.x < platform.x + platform.width &&
+            player.x + player.width > platform.x &&
+            player.y < platform.y + platform.height &&
+            player.y + player.height > platform.y) {
+          if (player.dy > 0 && player.y + player.height - player.dy <= platform.y) {
+            player.y = platform.y - player.height;
+            player.dy = 0;
+            player.onGround = true;
+            player.jumpCount = 0;
+          }
+        }
+      });
+
+      // Remove platforms that have scrolled off-screen
+      platforms = platforms.filter(p => p.x + p.width > 0);
+
+      // Generate new platforms when needed
+      if (platforms.length && platforms[platforms.length - 1].x + platforms[platforms.length - 1].width < canvas.width) {
+        const width = 120;
+        const height = 20;
+        const y = 300 - Math.floor(Math.random() * 150);
+        platforms.push({ x: canvas.width, y, width, height });
+      }
+
+      // Update power-ups: scroll left along with platforms
+      powerUps.forEach(powerUp => {
+        powerUp.x -= scrollSpeed;
+      });
+
+      // Remove power-ups that are off-screen or collected
+      powerUps = powerUps.filter(p => p.x + 10 > 0 && !p.collected);
+
+      // Randomly spawn a new power-up with low probability
+      if (Math.random() < 0.002) {
+        powerUps.push(spawnPowerUp());
+      }
+
+      // Check power-up collisions
+      checkPowerUpCollision();
+
+      // Check for game over (player falls below the canvas)
+      if (player.y + player.height > canvas.height) {
+        // Update high score if needed
+        if (score > highScore) {
+          highScore = score;
+        }
+        // Set game over flag, stop background music and play game over music
+        isGameOver = true;
+        backgroundMusic.pause();
+        gameOverMusic.play();
+      } else {
+        score++;
+      }
+
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    // Draw game objects
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw player
+      ctx.fillStyle = player.color;
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+
+      // Draw platforms
+      platforms.forEach(platform => {
+        ctx.fillStyle = 'brown';
+        ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+      });
+
+      // Draw power-ups
+      powerUps.forEach(powerUp => {
+        const color = powerUp.type === 'speed' ? 'blue' :
+                      powerUp.type === 'tripleJump' ? 'green' :
+                      powerUp.type === 'shield' ? 'yellow' : 'purple';
+        ctx.fillStyle = color;
+        ctx.fillRect(powerUp.x, powerUp.y, 10, 10);
+      });
+
+      // Draw score
+      ctx.fillStyle = 'black';
+      ctx.font = '20px Arial';
+      ctx.fillText('Score: ' + score, 10, 30);
+      ctx.fillText('High Score: ' + highScore, 10, 60);
+
+      // If game over, draw the death screen overlay
+      if (isGameOver) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '60px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 40);
+        ctx.font = '30px Arial';
+        ctx.fillText('Press R to Restart', canvas.width / 2, canvas.height / 2 + 20);
+      }
+    }
+
+    // Restart the game after game over
+    function restartGame() {
+      // Reset player state
+      player.x = 50;
+      player.y = 300;
+      player.dx = 0;
+      player.dy = 0;
+      player.jumpCount = 0;
+      player.speed = 4;
+      player.maxJumps = 2;
+      player.hasTripleJump = false;
+      player.shieldActive = false;
+      player.scoreMultiplier = 1;
+
+      // Reset game variables
+      platforms = generatePlatforms();
+      powerUps = [];
+      score = 0;
+      isGameOver = false;
+      // Restart background music and pause game over music
+      gameOverMusic.pause();
+      gameOverMusic.currentTime = 0;
+      backgroundMusic.currentTime = 0;
+      backgroundMusic.play();
+
+      // Resume update loop
+      update();
+    }
+
+    // Start the game loop
+    update();
+  </script>
+</body>
+</html>
